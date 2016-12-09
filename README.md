@@ -1,3 +1,5 @@
+# ReleaseYourFingers Project
+
 # Video Frame Analysis Sample
 
 This sample contains a library, along with two applications, for analyzing video frames from a webcam in near-real-time using APIs from [Microsoft Cognitive Services][]. The library and applications are implemented in C#, and use the [OpenCvSharp][] package for webcam support. 
