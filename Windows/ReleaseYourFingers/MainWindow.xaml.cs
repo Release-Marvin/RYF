@@ -124,6 +124,7 @@ namespace ReleaseYourFingers
                             message = visionEx.Error.Message;
                         }
                         MessageArea.Text = string.Format("{0} API call failed on frame {1}. Exception: {2}", apiName, e.Frame.Metadata.Index, message);
+                        Indicator.Fill = Brushes.Red;
                     }
                     else
                     {
@@ -133,6 +134,7 @@ namespace ReleaseYourFingers
                         if (!_fuseClientRemoteResults)
                         {
                             RightImage.Source = VisualizeResult(e.Frame);
+                            Indicator.Fill = Brushes.LightGreen;
                         }
                     }
                 }));
@@ -151,8 +153,8 @@ namespace ReleaseYourFingers
             // Encode image. 
             var jpg = frame.Image.ToMemoryStream(".jpg", s_jpegParams);
             // Submit image to API. 
-            var attrs = new List<FaceAttributeType> { FaceAttributeType.Age,
-                FaceAttributeType.Gender, FaceAttributeType.HeadPose };
+            var attrs = new List<FaceAttributeType> { FaceAttributeType.Smile,
+                FaceAttributeType.Gender, FaceAttributeType.HeadPose, FaceAttributeType.FacialHair };
             var faces = await _faceClient.DetectAsync(jpg, returnFaceAttributes: attrs);
             // Count the API call. 
             Properties.Settings.Default.FaceAPICallCount++;

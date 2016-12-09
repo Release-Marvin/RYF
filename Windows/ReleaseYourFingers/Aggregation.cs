@@ -35,7 +35,6 @@ namespace ReleaseYourFingers
         {
             List<string> attrs = new List<string>();
             if (attr.Gender != null) attrs.Add(attr.Gender);
-            if (attr.Age > 0) attrs.Add(attr.Age.ToString());
             if (attr.HeadPose != null)
             {
                 // Simple rule to estimate whether person is facing camera. 

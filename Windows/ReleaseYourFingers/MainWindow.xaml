@@ -18,6 +18,16 @@
             <Button Content="Stop Camera" Padding="5,0" Margin="5,5,0,5" Click="StopButton_Click" />
             <TextBlock VerticalAlignment="Center" Margin="15,5,0,5" Text="Mode:" />
             <ComboBox x:Name="ModeList" Width="100" Margin="5,5,0,5" Loaded="ModeList_Loaded" SelectionChanged="ModeList_SelectionChanged" />
+            <Ellipse x:Name="Indicator" Stroke="Black" Width="71" Margin="0,5" RenderTransformOrigin="0.5,0.5" HorizontalAlignment="Right">
+                <Ellipse.RenderTransform>
+                    <TransformGroup>
+                        <ScaleTransform/>
+                        <SkewTransform AngleX="-42.414"/>
+                        <RotateTransform/>
+                        <TranslateTransform X="11.42"/>
+                    </TransformGroup>
+                </Ellipse.RenderTransform>
+            </Ellipse>
         </StackPanel>
         <Button Content="Show/Hide Settings" Padding="5,0" Margin="5" Click="SettingsButton_Click" HorizontalAlignment="Right" />
         <Grid Grid.Row="1">
@@ -62,6 +72,6 @@
                 <Button Margin="5" Content="Save" Click="SaveSettingsButton_Click" />
             </StackPanel>
         </Grid>
-        <TextBlock Name="MessageArea" Margin="5" Grid.Row="2" VerticalAlignment="Center" />
+        <TextBlock Name="MessageArea" Margin="5,0,5,4" Grid.Row="2" VerticalAlignment="Center" Height="31" FontSize="24" />
     </Grid>
 </Window>
