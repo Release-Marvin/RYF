@@ -38,7 +38,7 @@ namespace ReleaseYourFingers
             if (attr.HeadPose != null)
             {
                 // Simple rule to estimate whether person is facing camera. 
-                bool facing = Math.Abs(attr.HeadPose.Yaw) < 25;
+                bool facing = Math.Abs(attr.HeadPose.Yaw) < 20;
                 attrs.Add(facing ? "facing camera" : "not facing camera");
             }
             return string.Join(", ", attrs);

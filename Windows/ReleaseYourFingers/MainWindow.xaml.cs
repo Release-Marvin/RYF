@@ -43,6 +43,10 @@ namespace ReleaseYourFingers
         private AppMode _mode;
         private DateTime _startTime;
 
+        private VideoFrame _preFrame = null;
+        private LiveCameraResult _preResults = null;
+        private bool checkMove = true;
+
         public enum AppMode
         {
             Faces,
@@ -133,8 +137,54 @@ namespace ReleaseYourFingers
                         // Display the image and visualization in the right pane. 
                         if (!_fuseClientRemoteResults)
                         {
+                            if (checkMove)
+                            {
+                                bool hasPeople = HasPeople();
+                                if (!hasPeople)
+                                {
+                                    MessageArea.Text = "No Guys！！！";
+                                    Indicator.Fill = Brushes.Red;
+                                    return;
+                                }
+                                bool still = IsStill(e.Frame);
+                                if (!still)
+                                {
+                                    MessageArea.Text = "Please don't move！！！";
+                                    Indicator.Fill = Brushes.Red;
+                                    return;
+                                }
+                            }
+                            bool faceCamera = IsAllFaceCamera();
+                            if (!faceCamera)
+                            {
+                                MessageArea.Text = "Please see the camera！！！";
+                                Indicator.Fill = Brushes.Red;
+                                checkMove = false;
+                                return;
+                            }
+                            else
+                            {
+                                checkMove = true;
+                            }
+                            
+                            bool noEyeClosed = NoEyeClosed();
+                            if (!noEyeClosed)
+                            {
+                                MessageArea.Text = "Please open your eyes！！！";
+                                Indicator.Fill = Brushes.Red;
+                                return;
+                            }
+                            
+                            bool happy = IsAllHappiness();
+                            if (!happy)
+                            {
+                                MessageArea.Text = "Please smile, Guys！！！";
+                                return;
+                            }
+                            //MessageArea.Text = move.ToString();
                             RightImage.Source = VisualizeResult(e.Frame);
                             Indicator.Fill = Brushes.LightGreen;
+                            MessageArea.Text = "";
                         }
                     }
                 }));
@@ -154,8 +204,8 @@ namespace ReleaseYourFingers
             var jpg = frame.Image.ToMemoryStream(".jpg", s_jpegParams);
             // Submit image to API. 
             var attrs = new List<FaceAttributeType> { FaceAttributeType.Smile,
-                FaceAttributeType.Gender, FaceAttributeType.HeadPose, FaceAttributeType.FacialHair };
-            var faces = await _faceClient.DetectAsync(jpg, returnFaceAttributes: attrs);
+                FaceAttributeType.HeadPose };
+            var faces = await _faceClient.DetectAsync(jpg, returnFaceLandmarks:true,returnFaceAttributes: attrs);
             // Count the API call. 
             Properties.Settings.Default.FaceAPICallCount++;
             // Output. 
@@ -453,6 +503,136 @@ namespace ReleaseYourFingers
                 OpenCvSharp.Rect r = sortedClientRects[i];
                 sortedResultFaces[i].FaceRectangle = new FaceRectangle { Left = r.Left, Top = r.Top, Width = r.Width, Height = r.Height };
             }
+        }
+
+        private bool IsStill(VideoFrame currFrame)
+        {
+            if (_preFrame == null || _preResults == null)
+            {
+                _preFrame = currFrame;
+                _preResults = _latestResultsToDisplay;    
+                return false;
+            }
+
+            LiveCameraResult currResults = _latestResultsToDisplay;
+            //Mat currMat = currFrame.Image;
+            //var currIndexer = currMat.GetGenericIndexer<Vec3b>();
+
+            //Mat preMat = _preFrame.Image;
+            //var preIndexer = preMat.GetGenericIndexer<Vec3d>();
+            LiveCameraResult preResults = _preResults;
+
+            double avr = 0;
+
+            if (currResults.Faces.Length != preResults.Faces.Length)
+            {
+                _preFrame = currFrame;
+                _preResults = currResults;
+                return false;
+            }
+
+            for (int i = 0; i < currResults.Faces.Length; i++)
+            {
+                avr = 0;
+                Face currFaceResult = currResults.Faces[i];
+                Face preFaceResult = preResults.Faces[i];
+                avr += Math.Abs(currFaceResult.FaceRectangle.Left - preFaceResult.FaceRectangle.Left);
+                avr += Math.Abs(currFaceResult.FaceRectangle.Top - preFaceResult.FaceRectangle.Top);
+                if (avr > 20)
+                {
+                    _preFrame = currFrame;
+                    _preResults = currResults;
+                    return false;
+                }
+            }
+
+            avr /= currResults.Faces.Length;
+            /*
+            for (int y = 0; y < currMat.Height; y++)
+            {
+                for (int x = 0; x < currMat.Width; x++)
+                {
+                    Vec3b color = currIndexer[y, x];
+                    byte temp = color.Item0;
+                    color.Item0 = color.Item2; // B <- R
+                    color.Item2 = temp;        // R <- B
+                    currIndexer[y, x] = color;
+                }
+            }
+            */
+            _preFrame = currFrame;
+            _preResults = currResults;
+            return true;
+            //MessageArea.Text = avr.ToString();
+        }
+
+        private bool IsAllFaceCamera()
+        {
+            LiveCameraResult currResults = _latestResultsToDisplay;
+            int numFaces = currResults.Faces.Length;
+            for (int i = 0; i < numFaces; i++)
+            {
+                Face face = currResults.Faces[i];
+                if (Math.Abs(face.FaceAttributes.HeadPose.Yaw) > 25)
+                    return false;
+            }
+            return true;
+        }
+
+        private bool HasPeople()
+        {
+            LiveCameraResult currResults = _latestResultsToDisplay;
+            if (currResults.Faces.Length <= 0)
+            {
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        }
+
+        private bool IsAllHappiness()
+        {
+
+            bool isAllHappiness = true;
+            LiveCameraResult lcr = _latestResultsToDisplay;
+            //        MessageArea.Text = lcr.Faces[0].FaceAttributes.Smile.ToString();
+            for (int i = 0; i < lcr.Faces.Length; i++)
+            {
+                if (lcr.Faces[i].FaceAttributes.Smile <= 0.5)
+                {
+                    isAllHappiness = false;
+                }
+            }
+
+            //MessageArea.Text = isAllHappiness.ToString();
+            return isAllHappiness;
+        }
+
+        private bool NoEyeClosed()
+        {
+            double EYE_THRESHOLD = 0.15;
+            LiveCameraResult currResults = _latestResultsToDisplay;
+            bool flag = true;
+            int numFaces = currResults.Faces.Length;
+            for (int i = 0; i < numFaces; i++)
+            {
+                Face face = currResults.Faces[i];
+                double left_eye_hight = Math.Abs(face.FaceLandmarks.EyeLeftBottom.Y - face.FaceLandmarks.EyeLeftTop.Y);
+                double left_eye_width = Math.Abs(face.FaceLandmarks.EyeLeftInner.X - face.FaceLandmarks.EyeLeftOuter.X);
+
+                double right_eye_hight = Math.Abs(face.FaceLandmarks.EyeRightBottom.Y - face.FaceLandmarks.EyeRightTop.Y);
+                double right_eye_width = Math.Abs(face.FaceLandmarks.EyeRightInner.X - face.FaceLandmarks.EyeRightOuter.X);
+
+                double left_eye = left_eye_hight / left_eye_width;
+                double right_eye = right_eye_hight / right_eye_width;
+                if (left_eye < EYE_THRESHOLD && right_eye < EYE_THRESHOLD)
+                {
+                    flag = false;
+                }
+            }
+            return flag;
         }
     }
 }
