@@ -152,6 +152,8 @@ namespace ReleaseYourFingers
                                 if (!still)
                                 {
                                     MessageArea.Text = "Please don't move！！！";
+                                    System.Media.SystemSounds.Beep.Play();
+                                    //Player.Play("C:\\Users\\MarvinCao\\Desktop\\1.mp3");
                                     RightImage.Source = VisualizeResult(e.Frame, errorList);
                                     Indicator.Fill = Brushes.Red;
                                     return;
@@ -161,6 +163,8 @@ namespace ReleaseYourFingers
                             if (!faceCamera)
                             {
                                 MessageArea.Text = "Please see the camera！！！";
+                                //System.Media.SystemSounds.Beep.Play();
+                                //Player.Play("C:\\Users\\MarvinCao\\Desktop\\1.mp3");
                                 RightImage.Source = VisualizeResult(e.Frame, errorList);
                                 Indicator.Fill = Brushes.Red;
                                 checkMove = false;
@@ -186,6 +190,8 @@ namespace ReleaseYourFingers
                                 if (!happy)
                                 {
                                     MessageArea.Text = "Please smile, Guys！！！";
+                                    System.Media.SystemSounds.Beep.Play();
+                                    //Player.Play("C:\\Users\\MarvinCao\\Desktop\\1.mp3");
                                     RightImage.Source = VisualizeResult(e.Frame, errorList);
                                     Indicator.Fill = Brushes.Red;
                                     return;
@@ -208,6 +214,7 @@ namespace ReleaseYourFingers
                             RightImage.Source = null;
                             LeftImage.Source = e.Frame.Image.ToBitmapSource();
                             Indicator.Fill = Brushes.LightGreen;
+                            System.Media.SystemSounds.Beep.Play();
                             MessageArea.Text = "拍照成功";
                         }
                     }
