@@ -47,15 +47,13 @@ namespace ReleaseYourFingers
         private VideoFrame _preFrame = null;
         private LiveCameraResult _preResults = null;
         private bool checkMove = true;
+        private bool smile = true;
+        private bool start = false;
 
         public enum AppMode
         {
-            Faces,
-            Emotions,
-            EmotionsWithClientFaceDetect,
-            Tags,
-            Celebrities,
-            FacesAndEmotions
+            Smile,
+            SimilarEmotion
         }
 
         public MainWindow()
@@ -68,14 +66,10 @@ namespace ReleaseYourFingers
             // Set up a listener for when the client receives a new frame.
             _grabber.NewFrameProvided += (s, e) =>
             {
-                if (_mode == AppMode.EmotionsWithClientFaceDetect)
+                if (!start)
                 {
-                    // Local face detection. 
-                    var rects = _localFaceDetector.DetectMultiScale(e.Frame.Image);
-                    // Attach faces to frame. 
-                    e.Frame.UserData = rects;
+                    return;
                 }
-
                 // The callback may occur on a different thread, so we must use the
                 // MainWindow.Dispatcher when manipulating the UI. 
                 this.Dispatcher.BeginInvoke((Action)(() =>
@@ -101,6 +95,10 @@ namespace ReleaseYourFingers
             // Set up a listener for when the client receives a new result from an API call. 
             _grabber.NewResultAvailable += (s, e) =>
             {
+                if (!start)
+                {
+                    return;
+                }
                 this.Dispatcher.BeginInvoke((Action)(() =>
                 {
                     if (e.TimedOut)
@@ -177,29 +175,38 @@ namespace ReleaseYourFingers
                             if (!noEyeClosed)
                             {
                                 MessageArea.Text = "Please open your eyes！！！";
-                                Indicator.Fill = Brushes.Red;
-                                return;
-                            }
-                            /*
-                            bool happy = IsAllHappiness(errorList);
-                            if (!happy)
-                            {
-                                MessageArea.Text = "Please smile, Guys！！！";
                                 RightImage.Source = VisualizeResult(e.Frame, errorList);
                                 Indicator.Fill = Brushes.Red;
                                 return;
                             }
-                            */
-                            bool similar = IsEmotionCorrelation(errorList);
-                            if (!similar)
+                            
+                            if (smile)
                             {
-                                MessageArea.Text = "Please use a similar emotion, Guys！！！";
-                                RightImage.Source = VisualizeResult(e.Frame, errorList);
-                                Indicator.Fill = Brushes.Red;
-                                return;
+                                bool happy = IsAllHappiness(errorList);
+                                if (!happy)
+                                {
+                                    MessageArea.Text = "Please smile, Guys！！！";
+                                    RightImage.Source = VisualizeResult(e.Frame, errorList);
+                                    Indicator.Fill = Brushes.Red;
+                                    return;
+                                }
                             }
+                            else
+                            {
+                                bool similar = IsEmotionCorrelation(errorList);
+                                if (!similar)
+                                {
+                                    MessageArea.Text = "Please use a similar emotion, Guys！！！";
+                                    RightImage.Source = VisualizeResult(e.Frame, errorList);
+                                    Indicator.Fill = Brushes.Red;
+                                    return;
+                                }
+                            }
+                            start = false;
+                            _grabber.StopProcessingAsync();
                             //MessageArea.Text = move.ToString();
-                            RightImage.Source = e.Frame.Image.ToBitmapSource();
+                            RightImage.Source = null;
+                            LeftImage.Source = e.Frame.Image.ToBitmapSource();
                             Indicator.Fill = Brushes.LightGreen;
                             MessageArea.Text = "拍照成功";
                         }
@@ -383,7 +390,7 @@ namespace ReleaseYourFingers
             {
 
                 visImage = Visualization.DrawFaces(visImage, result.Faces, result.EmotionScores, result.CelebrityNames, errorList);
-                visImage = Visualization.DrawTags(visImage, result.Tags);
+                //visImage = Visualization.DrawTags(visImage, result.Tags);
             }
 
             return visImage;
@@ -428,26 +435,13 @@ namespace ReleaseYourFingers
             _mode = modes[comboBox.SelectedIndex];
             switch (_mode)
             {
-                case AppMode.Faces:
+                case AppMode.Smile:
                     _grabber.AnalysisFunction = FacesAnalysisFunction;
+                    smile = true;
                     break;
-                case AppMode.Emotions:
-                    _grabber.AnalysisFunction = EmotionAnalysisFunction;
-                    break;
-                case AppMode.EmotionsWithClientFaceDetect:
-                    // Same as Emotions, except we will display the most recent faces combined with
-                    // the most recent API results. 
-                    _grabber.AnalysisFunction = EmotionAnalysisFunction;
-                    _fuseClientRemoteResults = true;
-                    break;
-                case AppMode.Tags:
-                    _grabber.AnalysisFunction = TaggingAnalysisFunction;
-                    break;
-                case AppMode.Celebrities:
-                    _grabber.AnalysisFunction = CelebrityAnalysisFunction;
-                    break;
-                case AppMode.FacesAndEmotions:
+                case AppMode.SimilarEmotion:
                     _grabber.AnalysisFunction = FacesAndEmotionAnalysisFunction;
+                    smile = false;
                     break;
                 default:
                     _grabber.AnalysisFunction = null;
@@ -481,12 +475,14 @@ namespace ReleaseYourFingers
 
             // Record start time, for auto-stop
             _startTime = DateTime.Now;
-
+            start = true;
+            Indicator.Fill = Brushes.Red;
             await _grabber.StartProcessingCameraAsync(CameraList.SelectedIndex);
         }
 
         private async void StopButton_Click(object sender, RoutedEventArgs e)
         {
+            start = false;
             await _grabber.StopProcessingAsync();
         }
 
