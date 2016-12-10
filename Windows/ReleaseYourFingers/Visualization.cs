@@ -10,6 +10,7 @@ using System.Windows.Media.Imaging;
 using Microsoft.ProjectOxford.Emotion.Contract;
 using Microsoft.ProjectOxford.Face.Contract;
 using Microsoft.ProjectOxford.Vision.Contract;
+using System.Collections;
 
 namespace ReleaseYourFingers
 {
@@ -79,6 +80,75 @@ namespace ReleaseYourFingers
             {
                 for (int i = 0; i < faces.Length; i++)
                 {
+                    var face = faces[i];
+                    if (face.FaceRectangle == null) { continue; }
+
+                    Rect faceRect = new Rect(
+                        face.FaceRectangle.Left, face.FaceRectangle.Top,
+                        face.FaceRectangle.Width, face.FaceRectangle.Height);
+                    string text = "";
+
+                    if (face.FaceAttributes != null)
+                    {
+                        text += Aggregation.SummarizeFaceAttributes(face.FaceAttributes);
+                    }
+
+                    if (emotionScores?[i] != null)
+                    {
+                        text += Aggregation.SummarizeEmotion(emotionScores[i]);
+                    }
+
+                    if (celebName?[i] != null)
+                    {
+                        text += celebName[i];
+                    }
+
+                    faceRect.Inflate(6 * annotationScale, 6 * annotationScale);
+
+                    double lineThickness = 4 * annotationScale;
+
+                    drawingContext.DrawRectangle(
+                        Brushes.Transparent,
+                        new Pen(s_lineBrush, lineThickness),
+                        faceRect);
+
+                    if (text != "")
+                    {
+                        FormattedText ft = new FormattedText(text,
+                            CultureInfo.CurrentCulture, FlowDirection.LeftToRight, s_typeface,
+                            16 * annotationScale, Brushes.Black);
+
+                        var pad = 3 * annotationScale;
+
+                        var ypad = pad;
+                        var xpad = pad + 4 * annotationScale;
+                        var origin = new Point(
+                            faceRect.Left + xpad - lineThickness / 2,
+                            faceRect.Top - ft.Height - ypad + lineThickness / 2);
+                        var rect = ft.BuildHighlightGeometry(origin).GetRenderBounds(null);
+                        rect.Inflate(xpad, ypad);
+
+                        drawingContext.DrawRectangle(s_lineBrush, null, rect);
+                        drawingContext.DrawText(ft, origin);
+                    }
+                }
+            };
+
+            return DrawOverlay(baseImage, drawAction);
+        }
+
+        public static BitmapSource DrawFaces(BitmapSource baseImage, Microsoft.ProjectOxford.Face.Contract.Face[] faces, Scores[] emotionScores, string[] celebName, ArrayList errorList)
+        {
+            if (faces == null)
+            {
+                return baseImage;
+            }
+
+            Action<DrawingContext, double> drawAction = (drawingContext, annotationScale) =>
+            {
+                for (int j = 0; j < errorList.Count; j++)
+                {
+                    int i = (int)errorList[j];
                     var face = faces[i];
                     if (face.FaceRectangle == null) { continue; }
 

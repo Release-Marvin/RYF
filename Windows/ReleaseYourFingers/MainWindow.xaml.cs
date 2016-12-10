@@ -22,6 +22,7 @@ using Microsoft.ProjectOxford.Face;
 using Microsoft.ProjectOxford.Face.Contract;
 using Microsoft.ProjectOxford.Vision;
 using VideoFrameAnalyzer;
+using System.Collections;
 
 namespace ReleaseYourFingers
 {
@@ -53,7 +54,8 @@ namespace ReleaseYourFingers
             Emotions,
             EmotionsWithClientFaceDetect,
             Tags,
-            Celebrities
+            Celebrities,
+            FacesAndEmotions
         }
 
         public MainWindow()
@@ -137,6 +139,8 @@ namespace ReleaseYourFingers
                         // Display the image and visualization in the right pane. 
                         if (!_fuseClientRemoteResults)
                         {
+                            ArrayList errorList = new ArrayList();
+                            errorList.Add(0);
                             if (checkMove)
                             {
                                 bool hasPeople = HasPeople();
@@ -146,18 +150,20 @@ namespace ReleaseYourFingers
                                     Indicator.Fill = Brushes.Red;
                                     return;
                                 }
-                                bool still = IsStill(e.Frame);
+                                bool still = IsStill(e.Frame, errorList);
                                 if (!still)
                                 {
                                     MessageArea.Text = "Please don't move！！！";
+                                    RightImage.Source = VisualizeResult(e.Frame, errorList);
                                     Indicator.Fill = Brushes.Red;
                                     return;
                                 }
                             }
-                            bool faceCamera = IsAllFaceCamera();
+                            bool faceCamera = IsAllFaceCamera(errorList);
                             if (!faceCamera)
                             {
                                 MessageArea.Text = "Please see the camera！！！";
+                                RightImage.Source = VisualizeResult(e.Frame, errorList);
                                 Indicator.Fill = Brushes.Red;
                                 checkMove = false;
                                 return;
@@ -167,24 +173,35 @@ namespace ReleaseYourFingers
                                 checkMove = true;
                             }
                             
-                            bool noEyeClosed = NoEyeClosed();
+                            bool noEyeClosed = NoEyeClosed(errorList);
                             if (!noEyeClosed)
                             {
                                 MessageArea.Text = "Please open your eyes！！！";
                                 Indicator.Fill = Brushes.Red;
                                 return;
                             }
-                            
-                            bool happy = IsAllHappiness();
+                            /*
+                            bool happy = IsAllHappiness(errorList);
                             if (!happy)
                             {
                                 MessageArea.Text = "Please smile, Guys！！！";
+                                RightImage.Source = VisualizeResult(e.Frame, errorList);
+                                Indicator.Fill = Brushes.Red;
+                                return;
+                            }
+                            */
+                            bool similar = IsEmotionCorrelation(errorList);
+                            if (!similar)
+                            {
+                                MessageArea.Text = "Please use a similar emotion, Guys！！！";
+                                RightImage.Source = VisualizeResult(e.Frame, errorList);
+                                Indicator.Fill = Brushes.Red;
                                 return;
                             }
                             //MessageArea.Text = move.ToString();
-                            RightImage.Source = VisualizeResult(e.Frame);
+                            RightImage.Source = e.Frame.Image.ToBitmapSource();
                             Indicator.Fill = Brushes.LightGreen;
-                            MessageArea.Text = "";
+                            MessageArea.Text = "拍照成功";
                         }
                     }
                 }));
@@ -192,6 +209,39 @@ namespace ReleaseYourFingers
 
             // Create local face detector. 
             _localFaceDetector.Load("Data/haarcascade_frontalface_alt2.xml");
+        }
+
+        private async Task<LiveCameraResult> FacesAndEmotionAnalysisFunction(VideoFrame frame)
+        {
+            // Encode image. 
+            var jpg = frame.Image.ToMemoryStream(".jpg", s_jpegParams);
+
+            // Submit image to Face API. 
+            var attrs = new List<FaceAttributeType> { FaceAttributeType.Smile,
+                FaceAttributeType.HeadPose };
+            var faces = await _faceClient.DetectAsync(jpg, returnFaceLandmarks: true, returnFaceAttributes: attrs);
+            // Count the Face API call. 
+            Properties.Settings.Default.FaceAPICallCount++;
+
+            // Encode image. 
+            var jpg1 = frame.Image.ToMemoryStream(".jpg", s_jpegParams);
+
+            // Submit image to Emotion API. 
+            Emotion[] emotions = null;
+
+            emotions = await _emotionClient.RecognizeAsync(jpg1);
+
+            // Count the Emotion API call. 
+            Properties.Settings.Default.EmotionAPICallCount++;
+
+            // Output. 
+            return new LiveCameraResult
+            {
+                //Faces = emotions.Select(e => CreateFace(e.FaceRectangle)).ToArray(),
+                Faces = faces,
+                // Extract emotion scores from results. 
+                EmotionScores = emotions.Select(e => e.Scores).ToArray()
+            };
         }
 
         /// <summary> Function which submits a frame to the Face API. </summary>
@@ -322,6 +372,23 @@ namespace ReleaseYourFingers
             return visImage;
         }
 
+        private BitmapSource VisualizeResult(VideoFrame frame, ArrayList errorList)
+        {
+            // Draw any results on top of the image. 
+            BitmapSource visImage = frame.Image.ToBitmapSource();
+
+            var result = _latestResultsToDisplay;
+
+            if (result != null)
+            {
+
+                visImage = Visualization.DrawFaces(visImage, result.Faces, result.EmotionScores, result.CelebrityNames, errorList);
+                visImage = Visualization.DrawTags(visImage, result.Tags);
+            }
+
+            return visImage;
+        }
+
         /// <summary> Populate CameraList in the UI, once it is loaded. </summary>
         /// <param name="sender"> Source of the event. </param>
         /// <param name="e">      Routed event information. </param>
@@ -378,6 +445,9 @@ namespace ReleaseYourFingers
                     break;
                 case AppMode.Celebrities:
                     _grabber.AnalysisFunction = CelebrityAnalysisFunction;
+                    break;
+                case AppMode.FacesAndEmotions:
+                    _grabber.AnalysisFunction = FacesAndEmotionAnalysisFunction;
                     break;
                 default:
                     _grabber.AnalysisFunction = null;
@@ -505,7 +575,7 @@ namespace ReleaseYourFingers
             }
         }
 
-        private bool IsStill(VideoFrame currFrame)
+        private bool IsStill(VideoFrame currFrame, ArrayList errorList)
         {
             if (_preFrame == null || _preResults == null)
             {
@@ -538,10 +608,11 @@ namespace ReleaseYourFingers
                 Face preFaceResult = preResults.Faces[i];
                 avr += Math.Abs(currFaceResult.FaceRectangle.Left - preFaceResult.FaceRectangle.Left);
                 avr += Math.Abs(currFaceResult.FaceRectangle.Top - preFaceResult.FaceRectangle.Top);
-                if (avr > 20)
+                if (avr > 27)
                 {
                     _preFrame = currFrame;
                     _preResults = currResults;
+                    errorList.Add(i);
                     return false;
                 }
             }
@@ -566,7 +637,7 @@ namespace ReleaseYourFingers
             //MessageArea.Text = avr.ToString();
         }
 
-        private bool IsAllFaceCamera()
+        private bool IsAllFaceCamera(ArrayList errorList)
         {
             LiveCameraResult currResults = _latestResultsToDisplay;
             int numFaces = currResults.Faces.Length;
@@ -574,7 +645,10 @@ namespace ReleaseYourFingers
             {
                 Face face = currResults.Faces[i];
                 if (Math.Abs(face.FaceAttributes.HeadPose.Yaw) > 25)
+                {
+                    errorList.Add(i);
                     return false;
+                }
             }
             return true;
         }
@@ -592,9 +666,8 @@ namespace ReleaseYourFingers
             }
         }
 
-        private bool IsAllHappiness()
+        private bool IsAllHappiness(ArrayList errorList)
         {
-
             bool isAllHappiness = true;
             LiveCameraResult lcr = _latestResultsToDisplay;
             //        MessageArea.Text = lcr.Faces[0].FaceAttributes.Smile.ToString();
@@ -603,6 +676,7 @@ namespace ReleaseYourFingers
                 if (lcr.Faces[i].FaceAttributes.Smile <= 0.5)
                 {
                     isAllHappiness = false;
+                    errorList.Add(i);
                 }
             }
 
@@ -610,7 +684,7 @@ namespace ReleaseYourFingers
             return isAllHappiness;
         }
 
-        private bool NoEyeClosed()
+        private bool NoEyeClosed(ArrayList errorList)
         {
             double EYE_THRESHOLD = 0.15;
             LiveCameraResult currResults = _latestResultsToDisplay;
@@ -629,10 +703,48 @@ namespace ReleaseYourFingers
                 double right_eye = right_eye_hight / right_eye_width;
                 if (left_eye < EYE_THRESHOLD && right_eye < EYE_THRESHOLD)
                 {
+                    errorList.Add(i);
                     flag = false;
                 }
             }
             return flag;
+        }
+
+        private bool IsEmotionCorrelation(ArrayList errorList)
+        {
+            bool isEmotionCorrelation = true;
+            LiveCameraResult lcr = _latestResultsToDisplay;
+            //        MessageArea.Text = lcr.Faces[0].FaceAttributes.Smile.ToString();
+
+            //            Tuple<string, float> dominantEmotion = Aggregation.GetDominantEmotion(lcr.EmotionScores[0]);
+            //           MessageArea.Text = dominantEmotion.Item1;
+
+            string[] dominants = new string[lcr.EmotionScores.Length];
+
+            for (int i = 0; i < lcr.EmotionScores.Length; i++)
+            {
+                dominants[i] = Aggregation.GetDominantEmotion(lcr.EmotionScores[i]).Item1;
+            }
+            var result = from item in dominants   //每一项                        
+                         group item by item into gro   //按项分组，没组就是gro                        
+                         orderby gro.Count() descending   //按照每组的数量进行排序                        
+                         select new { num = gro.Key, nums = gro.Count() };   //返回匿名类型对象，输出这个组的值和这个值出现的次数   
+            String emotion = "";
+            foreach (var item in result.Take(1))
+            {
+                emotion = item.num;
+            }
+
+            for (int i = 0; i < dominants.Length; i++)
+            {
+                if (dominants[i] != emotion)
+                {
+                    errorList.Add(i);
+                    isEmotionCorrelation = false;
+                }
+            }
+            //MessageArea.Text = emotion;
+            return isEmotionCorrelation;
         }
     }
 }
