@@ -22,6 +22,7 @@ using Microsoft.ProjectOxford.Face;
 using Microsoft.ProjectOxford.Face.Contract;
 using Microsoft.ProjectOxford.Vision;
 using VideoFrameAnalyzer;
+using System.Collections;
 
 namespace ReleaseYourFingers
 {
@@ -43,13 +44,16 @@ namespace ReleaseYourFingers
         private AppMode _mode;
         private DateTime _startTime;
 
+        private VideoFrame _preFrame = null;
+        private LiveCameraResult _preResults = null;
+        private bool checkMove = true;
+        private bool smile = true;
+        private bool start = false;
+
         public enum AppMode
         {
-            Faces,
-            Emotions,
-            EmotionsWithClientFaceDetect,
-            Tags,
-            Celebrities
+            Smile,
+            SimilarEmotion
         }
 
         public MainWindow()
@@ -62,14 +66,10 @@ namespace ReleaseYourFingers
             // Set up a listener for when the client receives a new frame.
             _grabber.NewFrameProvided += (s, e) =>
             {
-                if (_mode == AppMode.EmotionsWithClientFaceDetect)
+                if (!start)
                 {
-                    // Local face detection. 
-                    var rects = _localFaceDetector.DetectMultiScale(e.Frame.Image);
-                    // Attach faces to frame. 
-                    e.Frame.UserData = rects;
+                    return;
                 }
-
                 // The callback may occur on a different thread, so we must use the
                 // MainWindow.Dispatcher when manipulating the UI. 
                 this.Dispatcher.BeginInvoke((Action)(() =>
@@ -95,6 +95,10 @@ namespace ReleaseYourFingers
             // Set up a listener for when the client receives a new result from an API call. 
             _grabber.NewResultAvailable += (s, e) =>
             {
+                if (!start)
+                {
+                    return;
+                }
                 this.Dispatcher.BeginInvoke((Action)(() =>
                 {
                     if (e.TimedOut)
@@ -133,8 +137,85 @@ namespace ReleaseYourFingers
                         // Display the image and visualization in the right pane. 
                         if (!_fuseClientRemoteResults)
                         {
-                            RightImage.Source = VisualizeResult(e.Frame);
+                            ArrayList errorList = new ArrayList();
+                            errorList.Add(0);
+                            if (checkMove)
+                            {
+                                bool hasPeople = HasPeople();
+                                if (!hasPeople)
+                                {
+                                    MessageArea.Text = "No Guys！！！";
+                                    Indicator.Fill = Brushes.Red;
+                                    return;
+                                }
+                                bool still = IsStill(e.Frame, errorList);
+                                if (!still)
+                                {
+                                    MessageArea.Text = "Please don't move！！！";
+                                    System.Media.SystemSounds.Beep.Play();
+                                    //Player.Play("C:\\Users\\MarvinCao\\Desktop\\1.mp3");
+                                    RightImage.Source = VisualizeResult(e.Frame, errorList);
+                                    Indicator.Fill = Brushes.Red;
+                                    return;
+                                }
+                            }
+                            bool faceCamera = IsAllFaceCamera(errorList);
+                            if (!faceCamera)
+                            {
+                                MessageArea.Text = "Please see the camera！！！";
+                                //System.Media.SystemSounds.Beep.Play();
+                                //Player.Play("C:\\Users\\MarvinCao\\Desktop\\1.mp3");
+                                RightImage.Source = VisualizeResult(e.Frame, errorList);
+                                Indicator.Fill = Brushes.Red;
+                                checkMove = false;
+                                return;
+                            }
+                            else
+                            {
+                                checkMove = true;
+                            }
+                            
+                            bool noEyeClosed = NoEyeClosed(errorList);
+                            if (!noEyeClosed)
+                            {
+                                MessageArea.Text = "Please open your eyes！！！";
+                                RightImage.Source = VisualizeResult(e.Frame, errorList);
+                                Indicator.Fill = Brushes.Red;
+                                return;
+                            }
+                            
+                            if (smile)
+                            {
+                                bool happy = IsAllHappiness(errorList);
+                                if (!happy)
+                                {
+                                    MessageArea.Text = "Please smile, Guys！！！";
+                                    System.Media.SystemSounds.Beep.Play();
+                                    //Player.Play("C:\\Users\\MarvinCao\\Desktop\\1.mp3");
+                                    RightImage.Source = VisualizeResult(e.Frame, errorList);
+                                    Indicator.Fill = Brushes.Red;
+                                    return;
+                                }
+                            }
+                            else
+                            {
+                                bool similar = IsEmotionCorrelation(errorList);
+                                if (!similar)
+                                {
+                                    MessageArea.Text = "Please use a similar emotion, Guys！！！";
+                                    RightImage.Source = VisualizeResult(e.Frame, errorList);
+                                    Indicator.Fill = Brushes.Red;
+                                    return;
+                                }
+                            }
+                            start = false;
+                            _grabber.StopProcessingAsync();
+                            //MessageArea.Text = move.ToString();
+                            RightImage.Source = null;
+                            LeftImage.Source = e.Frame.Image.ToBitmapSource();
                             Indicator.Fill = Brushes.LightGreen;
+                            System.Media.SystemSounds.Beep.Play();
+                            MessageArea.Text = "拍照成功";
                         }
                     }
                 }));
@@ -142,6 +223,39 @@ namespace ReleaseYourFingers
 
             // Create local face detector. 
             _localFaceDetector.Load("Data/haarcascade_frontalface_alt2.xml");
+        }
+
+        private async Task<LiveCameraResult> FacesAndEmotionAnalysisFunction(VideoFrame frame)
+        {
+            // Encode image. 
+            var jpg = frame.Image.ToMemoryStream(".jpg", s_jpegParams);
+
+            // Submit image to Face API. 
+            var attrs = new List<FaceAttributeType> { FaceAttributeType.Smile,
+                FaceAttributeType.HeadPose };
+            var faces = await _faceClient.DetectAsync(jpg, returnFaceLandmarks: true, returnFaceAttributes: attrs);
+            // Count the Face API call. 
+            Properties.Settings.Default.FaceAPICallCount++;
+
+            // Encode image. 
+            var jpg1 = frame.Image.ToMemoryStream(".jpg", s_jpegParams);
+
+            // Submit image to Emotion API. 
+            Emotion[] emotions = null;
+
+            emotions = await _emotionClient.RecognizeAsync(jpg1);
+
+            // Count the Emotion API call. 
+            Properties.Settings.Default.EmotionAPICallCount++;
+
+            // Output. 
+            return new LiveCameraResult
+            {
+                //Faces = emotions.Select(e => CreateFace(e.FaceRectangle)).ToArray(),
+                Faces = faces,
+                // Extract emotion scores from results. 
+                EmotionScores = emotions.Select(e => e.Scores).ToArray()
+            };
         }
 
         /// <summary> Function which submits a frame to the Face API. </summary>
@@ -154,8 +268,8 @@ namespace ReleaseYourFingers
             var jpg = frame.Image.ToMemoryStream(".jpg", s_jpegParams);
             // Submit image to API. 
             var attrs = new List<FaceAttributeType> { FaceAttributeType.Smile,
-                FaceAttributeType.Gender, FaceAttributeType.HeadPose, FaceAttributeType.FacialHair };
-            var faces = await _faceClient.DetectAsync(jpg, returnFaceAttributes: attrs);
+                FaceAttributeType.HeadPose };
+            var faces = await _faceClient.DetectAsync(jpg, returnFaceLandmarks:true,returnFaceAttributes: attrs);
             // Count the API call. 
             Properties.Settings.Default.FaceAPICallCount++;
             // Output. 
@@ -272,6 +386,23 @@ namespace ReleaseYourFingers
             return visImage;
         }
 
+        private BitmapSource VisualizeResult(VideoFrame frame, ArrayList errorList)
+        {
+            // Draw any results on top of the image. 
+            BitmapSource visImage = frame.Image.ToBitmapSource();
+
+            var result = _latestResultsToDisplay;
+
+            if (result != null)
+            {
+
+                visImage = Visualization.DrawFaces(visImage, result.Faces, result.EmotionScores, result.CelebrityNames, errorList);
+                //visImage = Visualization.DrawTags(visImage, result.Tags);
+            }
+
+            return visImage;
+        }
+
         /// <summary> Populate CameraList in the UI, once it is loaded. </summary>
         /// <param name="sender"> Source of the event. </param>
         /// <param name="e">      Routed event information. </param>
@@ -311,23 +442,13 @@ namespace ReleaseYourFingers
             _mode = modes[comboBox.SelectedIndex];
             switch (_mode)
             {
-                case AppMode.Faces:
+                case AppMode.Smile:
                     _grabber.AnalysisFunction = FacesAnalysisFunction;
+                    smile = true;
                     break;
-                case AppMode.Emotions:
-                    _grabber.AnalysisFunction = EmotionAnalysisFunction;
-                    break;
-                case AppMode.EmotionsWithClientFaceDetect:
-                    // Same as Emotions, except we will display the most recent faces combined with
-                    // the most recent API results. 
-                    _grabber.AnalysisFunction = EmotionAnalysisFunction;
-                    _fuseClientRemoteResults = true;
-                    break;
-                case AppMode.Tags:
-                    _grabber.AnalysisFunction = TaggingAnalysisFunction;
-                    break;
-                case AppMode.Celebrities:
-                    _grabber.AnalysisFunction = CelebrityAnalysisFunction;
+                case AppMode.SimilarEmotion:
+                    _grabber.AnalysisFunction = FacesAndEmotionAnalysisFunction;
+                    smile = false;
                     break;
                 default:
                     _grabber.AnalysisFunction = null;
@@ -361,12 +482,14 @@ namespace ReleaseYourFingers
 
             // Record start time, for auto-stop
             _startTime = DateTime.Now;
-
+            start = true;
+            Indicator.Fill = Brushes.Red;
             await _grabber.StartProcessingCameraAsync(CameraList.SelectedIndex);
         }
 
         private async void StopButton_Click(object sender, RoutedEventArgs e)
         {
+            start = false;
             await _grabber.StopProcessingAsync();
         }
 
@@ -453,6 +576,178 @@ namespace ReleaseYourFingers
                 OpenCvSharp.Rect r = sortedClientRects[i];
                 sortedResultFaces[i].FaceRectangle = new FaceRectangle { Left = r.Left, Top = r.Top, Width = r.Width, Height = r.Height };
             }
+        }
+
+        private bool IsStill(VideoFrame currFrame, ArrayList errorList)
+        {
+            if (_preFrame == null || _preResults == null)
+            {
+                _preFrame = currFrame;
+                _preResults = _latestResultsToDisplay;    
+                return false;
+            }
+
+            LiveCameraResult currResults = _latestResultsToDisplay;
+            //Mat currMat = currFrame.Image;
+            //var currIndexer = currMat.GetGenericIndexer<Vec3b>();
+
+            //Mat preMat = _preFrame.Image;
+            //var preIndexer = preMat.GetGenericIndexer<Vec3d>();
+            LiveCameraResult preResults = _preResults;
+
+            double avr = 0;
+
+            if (currResults.Faces.Length != preResults.Faces.Length)
+            {
+                _preFrame = currFrame;
+                _preResults = currResults;
+                return false;
+            }
+
+            for (int i = 0; i < currResults.Faces.Length; i++)
+            {
+                avr = 0;
+                Face currFaceResult = currResults.Faces[i];
+                Face preFaceResult = preResults.Faces[i];
+                avr += Math.Abs(currFaceResult.FaceRectangle.Left - preFaceResult.FaceRectangle.Left);
+                avr += Math.Abs(currFaceResult.FaceRectangle.Top - preFaceResult.FaceRectangle.Top);
+                if (avr > 27)
+                {
+                    _preFrame = currFrame;
+                    _preResults = currResults;
+                    errorList.Add(i);
+                    return false;
+                }
+            }
+
+            avr /= currResults.Faces.Length;
+            /*
+            for (int y = 0; y < currMat.Height; y++)
+            {
+                for (int x = 0; x < currMat.Width; x++)
+                {
+                    Vec3b color = currIndexer[y, x];
+                    byte temp = color.Item0;
+                    color.Item0 = color.Item2; // B <- R
+                    color.Item2 = temp;        // R <- B
+                    currIndexer[y, x] = color;
+                }
+            }
+            */
+            _preFrame = currFrame;
+            _preResults = currResults;
+            return true;
+            //MessageArea.Text = avr.ToString();
+        }
+
+        private bool IsAllFaceCamera(ArrayList errorList)
+        {
+            LiveCameraResult currResults = _latestResultsToDisplay;
+            int numFaces = currResults.Faces.Length;
+            for (int i = 0; i < numFaces; i++)
+            {
+                Face face = currResults.Faces[i];
+                if (Math.Abs(face.FaceAttributes.HeadPose.Yaw) > 25)
+                {
+                    errorList.Add(i);
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private bool HasPeople()
+        {
+            LiveCameraResult currResults = _latestResultsToDisplay;
+            if (currResults.Faces.Length <= 0)
+            {
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        }
+
+        private bool IsAllHappiness(ArrayList errorList)
+        {
+            bool isAllHappiness = true;
+            LiveCameraResult lcr = _latestResultsToDisplay;
+            //        MessageArea.Text = lcr.Faces[0].FaceAttributes.Smile.ToString();
+            for (int i = 0; i < lcr.Faces.Length; i++)
+            {
+                if (lcr.Faces[i].FaceAttributes.Smile <= 0.5)
+                {
+                    isAllHappiness = false;
+                    errorList.Add(i);
+                }
+            }
+
+            //MessageArea.Text = isAllHappiness.ToString();
+            return isAllHappiness;
+        }
+
+        private bool NoEyeClosed(ArrayList errorList)
+        {
+            double EYE_THRESHOLD = 0.15;
+            LiveCameraResult currResults = _latestResultsToDisplay;
+            bool flag = true;
+            int numFaces = currResults.Faces.Length;
+            for (int i = 0; i < numFaces; i++)
+            {
+                Face face = currResults.Faces[i];
+                double left_eye_hight = Math.Abs(face.FaceLandmarks.EyeLeftBottom.Y - face.FaceLandmarks.EyeLeftTop.Y);
+                double left_eye_width = Math.Abs(face.FaceLandmarks.EyeLeftInner.X - face.FaceLandmarks.EyeLeftOuter.X);
+
+                double right_eye_hight = Math.Abs(face.FaceLandmarks.EyeRightBottom.Y - face.FaceLandmarks.EyeRightTop.Y);
+                double right_eye_width = Math.Abs(face.FaceLandmarks.EyeRightInner.X - face.FaceLandmarks.EyeRightOuter.X);
+
+                double left_eye = left_eye_hight / left_eye_width;
+                double right_eye = right_eye_hight / right_eye_width;
+                if (left_eye < EYE_THRESHOLD && right_eye < EYE_THRESHOLD)
+                {
+                    errorList.Add(i);
+                    flag = false;
+                }
+            }
+            return flag;
+        }
+
+        private bool IsEmotionCorrelation(ArrayList errorList)
+        {
+            bool isEmotionCorrelation = true;
+            LiveCameraResult lcr = _latestResultsToDisplay;
+            //        MessageArea.Text = lcr.Faces[0].FaceAttributes.Smile.ToString();
+
+            //            Tuple<string, float> dominantEmotion = Aggregation.GetDominantEmotion(lcr.EmotionScores[0]);
+            //           MessageArea.Text = dominantEmotion.Item1;
+
+            string[] dominants = new string[lcr.EmotionScores.Length];
+
+            for (int i = 0; i < lcr.EmotionScores.Length; i++)
+            {
+                dominants[i] = Aggregation.GetDominantEmotion(lcr.EmotionScores[i]).Item1;
+            }
+            var result = from item in dominants   //每一项                        
+                         group item by item into gro   //按项分组，没组就是gro                        
+                         orderby gro.Count() descending   //按照每组的数量进行排序                        
+                         select new { num = gro.Key, nums = gro.Count() };   //返回匿名类型对象，输出这个组的值和这个值出现的次数   
+            String emotion = "";
+            foreach (var item in result.Take(1))
+            {
+                emotion = item.num;
+            }
+
+            for (int i = 0; i < dominants.Length; i++)
+            {
+                if (dominants[i] != emotion)
+                {
+                    errorList.Add(i);
+                    isEmotionCorrelation = false;
+                }
+            }
+            //MessageArea.Text = emotion;
+            return isEmotionCorrelation;
         }
     }
 }

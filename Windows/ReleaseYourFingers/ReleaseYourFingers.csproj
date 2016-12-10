@@ -108,6 +108,7 @@
     <Compile Include="Aggregation.cs" />
     <Compile Include="CelebritiesResult.cs" />
     <Compile Include="LiveCameraResult.cs" />
+    <Compile Include="Player.cs" />
     <Compile Include="Visualization.cs" />
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
