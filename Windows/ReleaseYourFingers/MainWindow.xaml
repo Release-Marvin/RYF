@@ -62,8 +62,8 @@
                 <Button Margin="5" Content="Save" Click="SaveSettingsButton_Click" />
             </StackPanel>
         </Grid>
-        <TextBlock x:Name="MessageArea" Margin="5,64,10,4" Grid.Row="2" FontSize="24" />
-        <Ellipse x:Name="Indicator" Stroke="Black" RenderTransformOrigin="3.773,0.545" Margin="322,2,333,57" Grid.Row="2" HorizontalAlignment="Center" Width="62">
+        <TextBlock x:Name="MessageArea" Margin="5,4,10,64" Grid.Row="2" FontSize="24" HorizontalAlignment="Center"/>
+        <Ellipse x:Name="Indicator" Stroke="Black" RenderTransformOrigin="3.773,0.545" Margin="322,55,333,4" Grid.Row="2" HorizontalAlignment="Center" Width="62">
             <Ellipse.RenderTransform>
                 <TransformGroup>
                     <ScaleTransform/>

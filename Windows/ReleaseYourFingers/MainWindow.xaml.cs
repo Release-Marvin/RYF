@@ -49,6 +49,8 @@ namespace ReleaseYourFingers
         private bool checkMove = true;
         private bool smile = true;
         private bool start = false;
+        private Queue<FaceServiceClient> _facesQueues = new Queue<FaceServiceClient>();
+        private Queue<EmotionServiceClient> _emotionsQueues = new Queue<EmotionServiceClient>();
 
         public enum AppMode
         {
@@ -144,17 +146,17 @@ namespace ReleaseYourFingers
                                 bool hasPeople = HasPeople();
                                 if (!hasPeople)
                                 {
-                                    MessageArea.Text = "No Guys！！！";
+                                    MessageArea.Text = "视野内没有人！！！";
                                     Indicator.Fill = Brushes.Red;
                                     return;
                                 }
                                 bool still = IsStill(e.Frame, errorList);
                                 if (!still)
                                 {
-                                    MessageArea.Text = "Please don't move！！！";
-                                    System.Media.SystemSounds.Beep.Play();
-                                    //Player.Play("C:\\Users\\MarvinCao\\Desktop\\1.mp3");
-                                    RightImage.Source = VisualizeResult(e.Frame, errorList);
+                                    MessageArea.Text = "请不要动！！！";
+                                    //System.Media.SystemSounds.Beep.Play();
+                                    Player.Play("C:\\Users\\MarvinCao\\Desktop\\voice\\qbyd.mp3");
+                                    //RightImage.Source = VisualizeResult(e.Frame, errorList);
                                     Indicator.Fill = Brushes.Red;
                                     return;
                                 }
@@ -162,9 +164,10 @@ namespace ReleaseYourFingers
                             bool faceCamera = IsAllFaceCamera(errorList);
                             if (!faceCamera)
                             {
-                                MessageArea.Text = "Please see the camera！！！";
+                                MessageArea.Text = "请看照相机！！！";
                                 //System.Media.SystemSounds.Beep.Play();
                                 //Player.Play("C:\\Users\\MarvinCao\\Desktop\\1.mp3");
+                                Player.Play("C:\\Users\\MarvinCao\\Desktop\\voice\\qkzxj.mp3");
                                 RightImage.Source = VisualizeResult(e.Frame, errorList);
                                 Indicator.Fill = Brushes.Red;
                                 checkMove = false;
@@ -178,7 +181,8 @@ namespace ReleaseYourFingers
                             bool noEyeClosed = NoEyeClosed(errorList);
                             if (!noEyeClosed)
                             {
-                                MessageArea.Text = "Please open your eyes！！！";
+                                MessageArea.Text = "有人闭眼啦！！！";
+                                Player.Play("C:\\Users\\MarvinCao\\Desktop\\voice\\yrbyl.mp3");
                                 RightImage.Source = VisualizeResult(e.Frame, errorList);
                                 Indicator.Fill = Brushes.Red;
                                 return;
@@ -189,9 +193,9 @@ namespace ReleaseYourFingers
                                 bool happy = IsAllHappiness(errorList);
                                 if (!happy)
                                 {
-                                    MessageArea.Text = "Please smile, Guys！！！";
-                                    System.Media.SystemSounds.Beep.Play();
-                                    //Player.Play("C:\\Users\\MarvinCao\\Desktop\\1.mp3");
+                                    MessageArea.Text = "请笑一笑！！！";
+                                    //System.Media.SystemSounds.Beep.Play();
+                                    Player.Play("C:\\Users\\MarvinCao\\Desktop\\voice\\qxyx.mp3");
                                     RightImage.Source = VisualizeResult(e.Frame, errorList);
                                     Indicator.Fill = Brushes.Red;
                                     return;
@@ -203,6 +207,7 @@ namespace ReleaseYourFingers
                                 if (!similar)
                                 {
                                     MessageArea.Text = "Please use a similar emotion, Guys！！！";
+                                    Player.Play("C:\\Users\\MarvinCao\\Desktop\\voice\\qdjbcyz.mp3");
                                     RightImage.Source = VisualizeResult(e.Frame, errorList);
                                     Indicator.Fill = Brushes.Red;
                                     return;
@@ -214,7 +219,8 @@ namespace ReleaseYourFingers
                             RightImage.Source = null;
                             LeftImage.Source = e.Frame.Image.ToBitmapSource();
                             Indicator.Fill = Brushes.LightGreen;
-                            System.Media.SystemSounds.Beep.Play();
+                            //System.Media.SystemSounds.Beep.Play();
+                            Player.Play("C:\\Users\\MarvinCao\\Desktop\\voice\\pzcgl.mp3");
                             MessageArea.Text = "拍照成功";
                         }
                     }
@@ -233,7 +239,11 @@ namespace ReleaseYourFingers
             // Submit image to Face API. 
             var attrs = new List<FaceAttributeType> { FaceAttributeType.Smile,
                 FaceAttributeType.HeadPose };
+
+            _faceClient = _facesQueues.Dequeue();
+            _facesQueues.Enqueue(_faceClient);
             var faces = await _faceClient.DetectAsync(jpg, returnFaceLandmarks: true, returnFaceAttributes: attrs);
+
             // Count the Face API call. 
             Properties.Settings.Default.FaceAPICallCount++;
 
@@ -243,6 +253,8 @@ namespace ReleaseYourFingers
             // Submit image to Emotion API. 
             Emotion[] emotions = null;
 
+            _emotionClient = _emotionsQueues.Dequeue();
+            _emotionsQueues.Enqueue(_emotionClient);
             emotions = await _emotionClient.RecognizeAsync(jpg1);
 
             // Count the Emotion API call. 
@@ -269,7 +281,11 @@ namespace ReleaseYourFingers
             // Submit image to API. 
             var attrs = new List<FaceAttributeType> { FaceAttributeType.Smile,
                 FaceAttributeType.HeadPose };
+
+            _faceClient = _facesQueues.Dequeue();
+            _facesQueues.Enqueue(_faceClient);
             var faces = await _faceClient.DetectAsync(jpg, returnFaceLandmarks:true,returnFaceAttributes: attrs);
+
             // Count the API call. 
             Properties.Settings.Default.FaceAPICallCount++;
             // Output. 
@@ -286,6 +302,9 @@ namespace ReleaseYourFingers
             var jpg = frame.Image.ToMemoryStream(".jpg", s_jpegParams);
             // Submit image to API. 
             Emotion[] emotions = null;
+
+            _emotionClient = _emotionsQueues.Dequeue();
+            _emotionsQueues.Enqueue(_emotionClient);
 
             // See if we have local face detections for this image.
             var localFaces = (OpenCvSharp.Rect[])frame.UserData;
@@ -469,9 +488,21 @@ namespace ReleaseYourFingers
             Properties.Settings.Default.EmotionAPIKey = Properties.Settings.Default.EmotionAPIKey.Trim();
             Properties.Settings.Default.VisionAPIKey = Properties.Settings.Default.VisionAPIKey.Trim();
 
+            _facesQueues.Clear();
+            _facesQueues.Enqueue(new FaceServiceClient("d13d74649bf2453e9857eefe50c06836"));// Cao Gang
+            _facesQueues.Enqueue(new FaceServiceClient("4c3920c1ce28464b807cdfda7362c846"));// Zhang Zong Shuai
+            _facesQueues.Enqueue(new FaceServiceClient("b1ee26e346724e15816d4299498e0d7d"));// Jiang Wan
+            _facesQueues.Enqueue(new FaceServiceClient("88248f1d789d47579a33e9173d878072"));// Wang Bin Bin
+
+            _emotionsQueues.Clear();
+            _emotionsQueues.Enqueue(new EmotionServiceClient("4ab239ff0ce046a6bcb1a905d214191d"));// Cao Gang
+            _emotionsQueues.Enqueue(new EmotionServiceClient("9025fdd11a1b48bdbccd99c7a1866ee5"));// Zhang Zong Shuai
+            _emotionsQueues.Enqueue(new EmotionServiceClient("f4106cd499de42389b21cc0a62ccb983"));// Jiang Wan
+            _emotionsQueues.Enqueue(new EmotionServiceClient("12d91b99d2904d15a80b959d3858babc"));// Wang Bin Bin
+
             // Create API clients. 
-            _faceClient = new FaceServiceClient(Properties.Settings.Default.FaceAPIKey);
-            _emotionClient = new EmotionServiceClient(Properties.Settings.Default.EmotionAPIKey);
+            //_faceClient = new FaceServiceClient(Properties.Settings.Default.FaceAPIKey);
+            //_emotionClient = new EmotionServiceClient(Properties.Settings.Default.EmotionAPIKey);
             _visionClient = new VisionServiceClient(Properties.Settings.Default.VisionAPIKey);
 
             // How often to analyze. 
@@ -611,7 +642,7 @@ namespace ReleaseYourFingers
                 Face preFaceResult = preResults.Faces[i];
                 avr += Math.Abs(currFaceResult.FaceRectangle.Left - preFaceResult.FaceRectangle.Left);
                 avr += Math.Abs(currFaceResult.FaceRectangle.Top - preFaceResult.FaceRectangle.Top);
-                if (avr > 27)
+                if (avr > 30)
                 {
                     _preFrame = currFrame;
                     _preResults = currResults;
