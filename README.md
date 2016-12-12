@@ -1,4 +1,11 @@
 # ReleaseYourFingers Project
+## Windows文件夹中的ReleaseYourFingers即为我们的项目目录
+
+-------------------------------------
+
+# 原有的Video Sample如下
+
+-----------------------------
 
 # Video Frame Analysis Sample
 
